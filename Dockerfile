@@ -1,9 +1,9 @@
-# Use Node 22 base image and install g++ for C++ compilation
+# Use Node 22 base image and install g++ + JDK for compilation
 FROM node:22-bullseye
 
-# Install g++ (needed by your /run endpoint) and clean up apt files
+# Install g++ and OpenJDK (needed by your /run endpoint), then clean up apt files
 RUN apt-get update \
-  && apt-get install -y g++ \
+  && apt-get install -y g++ openjdk-17-jdk-headless \
   && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /usr/src/app
