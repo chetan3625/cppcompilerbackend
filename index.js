@@ -2,7 +2,7 @@ require("dotenv").config();
 
 const express = require("express");
 const fs = require("fs");
-const { exec } = require("child_process");
+const { exec, spawn } = require("child_process");
 const path = require("path");
 
 console.log("[index.js] loaded", { cwd: process.cwd(), filename: __filename });
@@ -38,7 +38,6 @@ app.post("/run", (req, res) => {
       : filepath.replace(/\.cpp$/i, "");
 
     const compileCmd = `g++ "${filepath}" -o "${outputFile}"`;
-    const runCmd = process.platform === "win32" ? `"${outputFile}"` : `"${outputFile}"`;
 
     exec(compileCmd, (compileError, stdout, stderr) => {
 
@@ -53,15 +52,36 @@ app.post("/run", (req, res) => {
             return res.status(500).send(stderr || compileError.message);
         }
 
-        exec(outputFile, (runError, stdout, stderr) => {
+        const runInput = typeof req.body.input === "string" ? req.body.input : "";
 
-            if (runError) {
-                return res.send(stderr);
-            }
+        const child = spawn(outputFile, { cwd: tempDir });
 
-            res.send(stdout);
+        let stdoutData = "";
+        let stderrData = "";
 
+        child.stdout.on("data", (data) => {
+          stdoutData += data.toString();
         });
+        child.stderr.on("data", (data) => {
+          stderrData += data.toString();
+        });
+
+        child.on("error", (err) => {
+          return res.status(500).send(err.message);
+        });
+
+        child.on("close", (code) => {
+          if (code !== 0) {
+            // Prefer stderr when available
+            return res.status(200).send(stderrData || `Process exited with code ${code}`);
+          }
+          res.send(stdoutData);
+        });
+
+        if (runInput) {
+          child.stdin.write(runInput);
+        }
+        child.stdin.end();
 
     });
 
