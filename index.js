@@ -1,3 +1,5 @@
+require("dotenv").config();
+
 const express = require("express");
 const fs = require("fs");
 const { exec } = require("child_process");
@@ -69,6 +71,8 @@ app.get("/server", (req, res) => {
   res.send("Server working");
 });
 
-app.listen(3000, () => {
-    console.log("Server running on port 3000");
+const PORT = process.env.PORT ? Number(process.env.PORT) : 3000;
+
+app.listen(PORT, () => {
+    console.log(`Server running on port ${PORT}`);
 });
