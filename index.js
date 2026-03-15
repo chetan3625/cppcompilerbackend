@@ -24,6 +24,11 @@ app.post("/run", (req, res) => {
 
     const language = typeof req.body.language === "string" ? req.body.language.toLowerCase() : "cpp";
 
+    const tempDir = path.join(__dirname, "temp");
+    if (!fs.existsSync(tempDir)) {
+      fs.mkdirSync(tempDir, { recursive: true });
+    }
+
     const runId = `${Date.now()}_${Math.floor(Math.random() * 1e6)}`;
     const runDir = path.join(tempDir, runId);
     if (!fs.existsSync(runDir)) {
