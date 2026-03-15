@@ -22,48 +22,80 @@ app.post("/run", (req, res) => {
 
     const code = req.body.code;
 
-    const fileName = `code_${Date.now()}.cpp`;
+    const language = typeof req.body.language === "string" ? req.body.language.toLowerCase() : "cpp";
 
-    const tempDir = path.join(__dirname, "temp");
-    if (!fs.existsSync(tempDir)) {
-      fs.mkdirSync(tempDir, { recursive: true });
+    const runId = `${Date.now()}_${Math.floor(Math.random() * 1e6)}`;
+    const runDir = path.join(tempDir, runId);
+    if (!fs.existsSync(runDir)) {
+      fs.mkdirSync(runDir, { recursive: true });
     }
 
-    const filepath = path.join(tempDir, fileName);
+    let sourceFile;
+    let compileCmd;
+    let runCommand;
+    let runArgs = [];
+    let needsStdin = false;
 
-    fs.writeFileSync(filepath, code);
-
-    const outputFile = process.platform === "win32"
-      ? filepath.replace(/\.cpp$/i, ".exe")
-      : filepath.replace(/\.cpp$/i, "");
-
-    const compileCmd = `g++ "${filepath}" -o "${outputFile}"`;
+    if (language === "java") {
+      const classMatch = code.match(/public\s+class\s+([A-Za-z_][A-Za-z0-9_]*)/);
+      const className = classMatch ? classMatch[1] : "Main";
+      sourceFile = path.join(runDir, `${className}.java`);
+      fs.writeFileSync(sourceFile, code);
+      compileCmd = `javac "${sourceFile}"`;
+      runCommand = "java";
+      runArgs = ["-cp", runDir, className];
+      needsStdin = /\bScanner\s*\(|System\.in\b|readLine\s*\(/.test(code);
+    } else {
+      sourceFile = path.join(runDir, `code.cpp`);
+      fs.writeFileSync(sourceFile, code);
+      const outputFile = path.join(runDir, process.platform === "win32" ? "a.exe" : "a.out");
+      compileCmd = `g++ "${sourceFile}" -o "${outputFile}"`;
+      runCommand = outputFile;
+      needsStdin = /\b(std::)?cin\b|getline\s*\(/.test(code);
+    }
 
     exec(compileCmd, (compileError, stdout, stderr) => {
 
         if (compileError) {
-            // Friendly error when g++ is missing
-            if (compileError.code === "ENOENT" || /g\+\+.*not recognized/i.test(stderr)) {
+            if (language === "java") {
+              // Friendly error when javac is missing
+              if (compileError.code === "ENOENT" || /javac.*not recognized/i.test(stderr)) {
                 return res.status(500).send(
-                    "Compiler not found: g++ is not available on the PATH.\n" +
-                    "Install MinGW-w64 / MSYS2 (or another C++ toolchain) and ensure g++ is on the PATH."
+                  "Compiler not found: javac is not available on the PATH.\n" +
+                  "Install a JDK and ensure both javac and java are on the PATH."
                 );
+              }
+            } else {
+              // Friendly error when g++ is missing
+              if (compileError.code === "ENOENT" || /g\+\+.*not recognized/i.test(stderr)) {
+                return res.status(500).send(
+                  "Compiler not found: g++ is not available on the PATH.\n" +
+                  "Install MinGW-w64 / MSYS2 (or another C++ toolchain) and ensure g++ is on the PATH."
+                );
+              }
             }
             return res.status(500).send(stderr || compileError.message);
         }
 
-        const runInput = typeof req.body.input === "string" ? req.body.input : "";
+        // Accept either a string or an array of lines for stdin.
+        let runInput = "";
+        if (typeof req.body.input === "string") {
+          runInput = req.body.input;
+        } else if (Array.isArray(req.body.input)) {
+          runInput = req.body.input.join("\n");
+          // Ensure the last line is terminated so getline behaves as expected.
+          if (!runInput.endsWith("\n")) runInput += "\n";
+        }
 
-        // If the code reads from stdin but we were not provided any input, warn early.
-        const needsStdin = /\b(std::)?cin\b|getline\s*\(/.test(code);
-        if (needsStdin && !runInput) {
+        // If the code reads from stdin but we were not provided any meaningful input, warn early.
+        if (needsStdin && runInput.trim() === "") {
           return res.status(400).send(
-            "Your code reads from stdin (std::cin / getline), but no input was provided. " +
-            "Send a request body like { \"code\": ..., \"input\": \"line1\\nline2\\n\" }"
+            "Your code reads from stdin (std::cin / getline / Scanner / System.in), but no input was provided. " +
+            "Send a request body like { \"language\": \"cpp\", \"code\": ..., \"input\": \"line1\\nline2\\n\" }."
           );
         }
 
-        const child = spawn(outputFile, { cwd: tempDir });
+        const child = spawn(runCommand, runArgs, { cwd: runDir });
 
         let stdoutData = "";
         let stderrData = "";
