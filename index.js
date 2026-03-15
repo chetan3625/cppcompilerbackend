@@ -54,6 +54,15 @@ app.post("/run", (req, res) => {
 
         const runInput = typeof req.body.input === "string" ? req.body.input : "";
 
+        // If the code reads from stdin but we were not provided any input, warn early.
+        const needsStdin = /\b(std::)?cin\b|getline\s*\(/.test(code);
+        if (needsStdin && !runInput) {
+          return res.status(400).send(
+            "Your code reads from stdin (std::cin / getline), but no input was provided. " +
+            "Send a request body like { \"code\": ..., \"input\": \"line1\\nline2\\n\" }"
+          );
+        }
+
         const child = spawn(outputFile, { cwd: tempDir });
 
         let stdoutData = "";
