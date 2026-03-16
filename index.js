@@ -137,13 +137,30 @@ app.post("/run", (req, res) => {
     const renderResults = (results) => {
       if (results.length === 0) return "(no statements executed)";
 
-      const pieces = results.map((res, idx) => {
+      const statementRows = [];
+      const selectPieces = [];
+
+      results.forEach((res, idx) => {
         if (res.type === "select") {
           const table = formatTable(res.rows);
-          return `-- result ${idx + 1} --\n${table}`;
+          selectPieces.push(`-- result ${idx + 1} (SELECT) --\n${table}`);
+        } else {
+          statementRows.push({
+            "#": statementRows.length + 1,
+            action: res.action,
+            changes: res.changes,
+            lastID: res.lastID === null ? "NULL" : res.lastID,
+            statement: res.statement,
+          });
         }
-        return `-- statement ${idx + 1} --\nchanges: ${res.changes}  lastID: ${res.lastID}`;
       });
+
+      const pieces = [];
+      if (statementRows.length > 0) {
+        const summaryTable = formatTable(statementRows);
+        pieces.push(`-- statements summary --\n${summaryTable}`);
+      }
+      pieces.push(...selectPieces);
       return pieces.join("\n\n");
     };
 
@@ -166,6 +183,7 @@ app.post("/run", (req, res) => {
         }
 
         const stmt = statements[index];
+        const action = (stmt.match(/^\s*([A-Za-z_]+)/)?.[1] || "STATEMENT").toUpperCase();
         const isSelect = /^\s*(SELECT|PRAGMA|WITH)\b/i.test(stmt);
 
         if (isSelect) {
@@ -186,6 +204,8 @@ app.post("/run", (req, res) => {
 
             results.push({
               type: "statement",
+              action,
+              statement: stmt,
               changes: this.changes ?? 0,
               lastID: this.lastID ?? null,
             });
