@@ -118,9 +118,25 @@ app.post("/run", (req, res) => {
         });
       } else {
         db.exec(query, (err3) => {
-          db.close(() => {});
-          if (err3) return res.status(200).send(err3.message);
-          res.send("OK");
+          if (err3) {
+            db.close(() => {});
+            return res.status(200).send(err3.message);
+          }
+
+          db.get(
+            "SELECT changes() AS changes, last_insert_rowid() AS lastID",
+            (err4, info) => {
+              db.close(() => {});
+              if (err4) return res.status(200).send(err4.message);
+
+              // Return a useful structured response for non-SELECT queries.
+              res.json({
+                ok: true,
+                changes: info?.changes ?? 0,
+                lastID: info?.lastID ?? null,
+              });
+            }
+          );
         });
       }
     });
