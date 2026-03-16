@@ -105,41 +105,96 @@ app.post("/run", (req, res) => {
       return res.status(400).send("No SQL query provided.");
     }
 
+    const formatTable = (rows) => {
+      if (!rows || rows.length === 0) return "(no rows)";
+
+      const columns = Object.keys(rows[0]);
+      const widths = columns.map((col) => col.length);
+
+      // Measure column widths
+      for (const row of rows) {
+        columns.forEach((col, idx) => {
+          const cell = row[col] === null || row[col] === undefined ? "NULL" : String(row[col]);
+          widths[idx] = Math.max(widths[idx], cell.length);
+        });
+      }
+
+      const pad = (value, width) => {
+        const str = value === null || value === undefined ? "NULL" : String(value);
+        return str + " ".repeat(width - str.length);
+      };
+
+      const header = columns.map((col, idx) => pad(col, widths[idx])).join(" | ");
+      const separator = widths.map((w) => "-".repeat(w)).join("-+-");
+
+      const rowsText = rows
+        .map((row) => columns.map((col, idx) => pad(row[col], widths[idx])).join(" | "))
+        .join("\n");
+
+      return `${header}\n${separator}\n${rowsText}`;
+    };
+
+    const renderResults = (results) => {
+      if (results.length === 0) return "(no statements executed)";
+
+      const pieces = results.map((res, idx) => {
+        if (res.type === "select") {
+          const table = formatTable(res.rows);
+          return `-- result ${idx + 1} --\n${table}`;
+        }
+        return `-- statement ${idx + 1} --\nchanges: ${res.changes}  lastID: ${res.lastID}`;
+      });
+      return pieces.join("\n\n");
+    };
+
     const dbFile = path.join(runDir, "db.sqlite");
     const db = new sqlite3.Database(dbFile, sqlite3.OPEN_READWRITE | sqlite3.OPEN_CREATE, (err) => {
       if (err) return res.status(500).send(err.message);
 
-      const isSelect = /^\s*(SELECT|PRAGMA|WITH)\b/i.test(query);
+      // Split into individual statements (basic split on ';').
+      const statements = query
+        .split(";")
+        .map((s) => s.trim())
+        .filter((s) => s.length > 0);
+
+      const results = [];
+
+      const runStatement = (index) => {
+      if (index >= statements.length) {
+        db.close(() => {});
+        return res.send(renderResults(results));
+      }
+
+      const stmt = statements[index];
+      const isSelect = /^\s*(SELECT|PRAGMA|WITH)\b/i.test(stmt);
+
       if (isSelect) {
-        db.all(query, (err2, rows) => {
-          db.close(() => {});
-          if (err2) return res.status(200).send(err2.message);
-          res.json(rows);
+        db.all(stmt, (err2, rows) => {
+          if (err2) {
+            db.close(() => {});
+            return res.status(200).send(err2.message);
+          }
+          results.push({ type: "select", rows });
+          runStatement(index + 1);
         });
       } else {
-        db.exec(query, (err3) => {
+        db.run(stmt, function (err3) {
           if (err3) {
             db.close(() => {});
             return res.status(200).send(err3.message);
           }
 
-          db.get(
-            "SELECT changes() AS changes, last_insert_rowid() AS lastID",
-            (err4, info) => {
-              db.close(() => {});
-              if (err4) return res.status(200).send(err4.message);
-
-              // Return a useful structured response for non-SELECT queries.
-              res.json({
-                ok: true,
-                changes: info?.changes ?? 0,
-                lastID: info?.lastID ?? null,
-              });
-            }
-          );
+          results.push({
+            type: "statement",
+            changes: this.changes ?? 0,
+            lastID: this.lastID ?? null,
+          });
+          runStatement(index + 1);
         });
       }
-    });
+    };
+
+    runStatement(0);
   };
 
   const finishRun = () => {
