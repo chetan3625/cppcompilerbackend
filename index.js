@@ -5,6 +5,13 @@ const fs = require("fs");
 const { exec, spawn } = require("child_process");
 const path = require("path");
 
+let sqlite3;
+try {
+  sqlite3 = require("sqlite3").verbose();
+} catch (e) {
+  sqlite3 = null;
+}
+
 console.log("[index.js] loaded", { cwd: process.cwd(), filename: __filename });
 
 const app = express();
@@ -22,6 +29,7 @@ app.post("/run", (req, res) => {
 
   const code = req.body.code;
   const language = typeof req.body.language === "string" ? req.body.language.toLowerCase() : "cpp";
+  const isSql = language === "sql";
 
   const tempDir = path.join(__dirname, "temp");
   if (!fs.existsSync(tempDir)) {
@@ -40,7 +48,20 @@ app.post("/run", (req, res) => {
   let runArgs = [];
   let needsStdin = false;
 
-  if (language === "java") {
+  if (isSql) {
+    if (!sqlite3) {
+      return res.status(500).send(
+        "SQLite driver not installed. Run `npm install sqlite3` and restart the server."
+      );
+    }
+
+    sourceFile = path.join(runDir, `query.sql`);
+    fs.writeFileSync(sourceFile, code);
+
+    // We'll execute the query against an on-disk sqlite database inside the run dir.
+    // This keeps it isolated per request.
+    needsStdin = false;
+  } else if (language === "java") {
     const classMatch = code.match(/public\s+class\s+([A-Za-z_][A-Za-z0-9_]*)/);
     const className = classMatch ? classMatch[1] : "Main";
     sourceFile = path.join(runDir, `${className}.java`);
@@ -72,6 +93,39 @@ app.post("/run", (req, res) => {
     needsStdin = /\b(std::)?cin\b|getline\s*\(/.test(code);
   }
 
+  const runSql = () => {
+    if (!sqlite3) {
+      return res.status(500).send(
+        "SQLite driver not installed. Run `npm install sqlite3` and restart the server."
+      );
+    }
+
+    const query = (code || "").toString().trim();
+    if (!query) {
+      return res.status(400).send("No SQL query provided.");
+    }
+
+    const dbFile = path.join(runDir, "db.sqlite");
+    const db = new sqlite3.Database(dbFile, sqlite3.OPEN_READWRITE | sqlite3.OPEN_CREATE, (err) => {
+      if (err) return res.status(500).send(err.message);
+
+      const isSelect = /^\s*(SELECT|PRAGMA|WITH)\b/i.test(query);
+      if (isSelect) {
+        db.all(query, (err2, rows) => {
+          db.close(() => {});
+          if (err2) return res.status(200).send(err2.message);
+          res.json(rows);
+        });
+      } else {
+        db.exec(query, (err3) => {
+          db.close(() => {});
+          if (err3) return res.status(200).send(err3.message);
+          res.send("OK");
+        });
+      }
+    });
+  };
+
   const finishRun = () => {
     // Accept either a string or an array of lines for stdin.
     let runInput = "";
@@ -81,6 +135,13 @@ app.post("/run", (req, res) => {
       runInput = req.body.input.join("\n");
       // Ensure the last line is terminated so getline behaves as expected.
       if (!runInput.endsWith("\n")) runInput += "\n";
+    }
+
+    if (isSql) {
+      if (runInput.trim() !== "") {
+        return res.status(400).send("SQL mode does not accept stdin; send your query in the 'code' field.");
+      }
+      return runSql();
     }
 
     // If the code reads from stdin but we were not provided any meaningful input, warn early.
