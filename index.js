@@ -160,41 +160,42 @@ app.post("/run", (req, res) => {
       const results = [];
 
       const runStatement = (index) => {
-      if (index >= statements.length) {
-        db.close(() => {});
-        return res.send(renderResults(results));
-      }
+        if (index >= statements.length) {
+          db.close(() => {});
+          return res.send(renderResults(results));
+        }
 
-      const stmt = statements[index];
-      const isSelect = /^\s*(SELECT|PRAGMA|WITH)\b/i.test(stmt);
+        const stmt = statements[index];
+        const isSelect = /^\s*(SELECT|PRAGMA|WITH)\b/i.test(stmt);
 
-      if (isSelect) {
-        db.all(stmt, (err2, rows) => {
-          if (err2) {
-            db.close(() => {});
-            return res.status(200).send(err2.message);
-          }
-          results.push({ type: "select", rows });
-          runStatement(index + 1);
-        });
-      } else {
-        db.run(stmt, function (err3) {
-          if (err3) {
-            db.close(() => {});
-            return res.status(200).send(err3.message);
-          }
-
-          results.push({
-            type: "statement",
-            changes: this.changes ?? 0,
-            lastID: this.lastID ?? null,
+        if (isSelect) {
+          db.all(stmt, (err2, rows) => {
+            if (err2) {
+              db.close(() => {});
+              return res.status(200).send(err2.message);
+            }
+            results.push({ type: "select", rows });
+            runStatement(index + 1);
           });
-          runStatement(index + 1);
-        });
-      }
-    };
+        } else {
+          db.run(stmt, function (err3) {
+            if (err3) {
+              db.close(() => {});
+              return res.status(200).send(err3.message);
+            }
 
-    runStatement(0);
+            results.push({
+              type: "statement",
+              changes: this.changes ?? 0,
+              lastID: this.lastID ?? null,
+            });
+            runStatement(index + 1);
+          });
+        }
+      };
+
+      runStatement(0);
+    });
   };
 
   const finishRun = () => {
@@ -298,5 +299,5 @@ app.get("/server", (req, res) => {
 const PORT = process.env.PORT ? Number(process.env.PORT) : 3000;
 
 app.listen(PORT, () => {
-    console.log(`Server running on port ${PORT}`);
+  console.log(`Server running on port ${PORT}`);
 });
