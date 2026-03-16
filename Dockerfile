@@ -3,7 +3,7 @@ FROM node:22-bullseye
 
 # Install compilers/interpreters needed by your /run endpoint (C/C++/Java/Python), then clean up apt files
 RUN apt-get update \
-  && apt-get install -y build-essential openjdk-17-jdk-headless python3 \
+  && apt-get install -y build-essential openjdk-17-jdk-headless python3 libsqlite3-dev sqlite3 \
   && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /usr/src/app
