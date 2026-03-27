@@ -36,6 +36,14 @@ async function generateChatReply({ message, codeContext, language }) {
   const prompt = buildPrompt({ message, codeContext, language });
   const endpoint = `${GEMINI_API_BASE_URL}/models/${encodeURIComponent(model)}:generateContent?key=${encodeURIComponent(apiKey)}`;
 
+  console.log("Calling Gemini", {
+    model,
+    baseUrl: GEMINI_API_BASE_URL,
+    hasApiKey: Boolean(apiKey),
+    apiKeyPrefix: apiKey ? `${apiKey.slice(0, 4)}...` : "missing",
+    promptLength: prompt.length,
+  });
+
   let response;
   try {
     response = await fetch(endpoint, {
@@ -76,6 +84,7 @@ async function generateChatReply({ message, codeContext, language }) {
 
   const reply = extractReply(payload);
   if (!reply) {
+    console.error("Gemini returned empty reply payload", JSON.stringify(payload));
     throw new AppError("AI service returned an empty reply.", 502);
   }
 

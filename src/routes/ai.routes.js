@@ -27,13 +27,25 @@ router.post("/chat", chatRateLimit, async (req, res, next) => {
         : "text";
 
     if (!message) {
+      console.warn("AI chat validation failed: missing message");
       return res.status(400).json({
         success: false,
         error: "`message` is required.",
       });
     }
 
+    console.log("AI chat request received", {
+      language,
+      messageLength: message.length,
+      codeContextLength: codeContext.length,
+    });
+
     const reply = await generateChatReply({ message, codeContext, language });
+
+    console.log("AI chat request completed", {
+      language,
+      replyLength: reply.length,
+    });
 
     return res.json({
       success: true,

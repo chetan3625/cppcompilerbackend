@@ -5,7 +5,7 @@ function notFoundHandler(_req, res) {
     success: false,
     error: "Route not found",
   });
-}
+} 
 
 function errorHandler(error, _req, res, _next) {
   const statusCode =
