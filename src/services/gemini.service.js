@@ -51,7 +51,8 @@ async function generateChatReply({ message, codeContext, language }) {
         ],
       }),
     });
-  } catch (_error) {
+  } catch (error) {
+    console.error("Gemini fetch failed:", error.message);
     throw new AppError("Unable to reach the AI service right now.", 502);
   }
 
@@ -64,6 +65,7 @@ async function generateChatReply({ message, codeContext, language }) {
 
   if (!response.ok) {
     const providerMessage = payload?.error?.message;
+    console.error("Gemini API error:", response.status, providerMessage || "Unknown provider error");
     const safeMessage =
       response.status >= 500
         ? "AI service is temporarily unavailable."
